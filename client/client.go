@@ -154,4 +154,5 @@ func (client *Client) GetListener() *Listener {
 
 func (client *Client) Stop() {
 	client.Destroy()
+	client.jsonClient.Destroy()
 }

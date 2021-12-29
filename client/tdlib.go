@@ -22,12 +22,12 @@ import (
 )
 
 type JsonClient struct {
-	id int
+	jsonClient unsafe.Pointer
 }
 
 func NewJsonClient() *JsonClient {
 	return &JsonClient{
-		id: int(C.td_create_client_id()),
+		jsonClient: C.td_json_client_create(),
 	}
 }
 
@@ -38,7 +38,7 @@ func (jsonClient *JsonClient) Send(req Request) {
 	query := C.CString(string(data))
 	defer C.free(unsafe.Pointer(query))
 
-	C.td_send(C.int(jsonClient.id), query)
+	C.td_json_client_send(jsonClient.jsonClient, query)
 }
 
 // Receives incoming updates and request responses from the TDLib client. May be called from any thread, but
@@ -46,7 +46,7 @@ func (jsonClient *JsonClient) Send(req Request) {
 // Returned pointer will be deallocated by TDLib during next call to td_json_client_receive or td_json_client_execute
 // in the same thread, so it can't be used after that.
 func (jsonClient *JsonClient) Receive(timeout time.Duration) (*Response, error) {
-	result := C.td_receive(C.double(float64(timeout) / float64(time.Second)))
+	result := C.td_json_client_receive(jsonClient.jsonClient, C.double(float64(timeout)/float64(time.Second)))
 	if result == nil {
 		return nil, errors.New("update receiving timeout")
 	}
@@ -58,10 +58,6 @@ func (jsonClient *JsonClient) Receive(timeout time.Duration) (*Response, error) 
 	err := json.Unmarshal(data, &resp)
 	if err != nil {
 		return nil, err
-	}
-
-	if resp.ClientID != jsonClient.id {
-		return nil, errors.New("wrong @client_id")
 	}
 
 	resp.Data = data
@@ -78,7 +74,8 @@ func (jsonClient *JsonClient) Execute(req Request) (*Response, error) {
 
 	query := C.CString(string(data))
 	defer C.free(unsafe.Pointer(query))
-	result := C.td_execute(query)
+
+	result := C.td_json_client_execute(jsonClient.jsonClient, query)
 	if result == nil {
 		return nil, errors.New("request can't be parsed")
 	}
@@ -97,10 +94,14 @@ func (jsonClient *JsonClient) Execute(req Request) (*Response, error) {
 	return &resp, nil
 }
 
+// Destroys the TDLib client instance. After this is called the client instance shouldn't be used anymore.
+func (jsonClient *JsonClient) Destroy() {
+	C.td_json_client_destroy(jsonClient.jsonClient)
+}
+
 type meta struct {
-	Type     string `json:"@type"`
-	Extra    string `json:"@extra"`
-	ClientID int    `json:"@client_id"`
+	Type  string `json:"@type"`
+	Extra string `json:"@extra"`
 }
 
 type Request struct {
